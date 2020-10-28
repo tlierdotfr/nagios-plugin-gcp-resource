@@ -1,5 +1,5 @@
-# check-stackdriver-go
-Nagios Plugin for GCP StackDriver metric monitoring.
+# nagios-plugin-gcp-resource
+Nagios Plugin for GCP Ressource metric monitoring.
 
 ## Build
 Build on linux
@@ -11,13 +11,13 @@ Build on linux
 
 Build on Windows
 ```
-# GOOS=linux GOARCH=amd64 go build check_stackdriver.go
+# GOOS=linux GOARCH=amd64 go build nagios-plugin-gcp-resource.go
 ```
 
 ## Usage 
 Sample command
 ```
-# ./check_stackdriver -g 'sample-project' -a '/path/to/auth-key.json' \
+# ./nagios-plugin-gcp-resource -g 'sample-project' -a '/path/to/auth-key.json' \
 -m 'storage.googleapis.com/storage/object_count' \
 -f 'resource.type = "gcs_bucket" AND resource.labels.bucket_name = "name of gcs bucket"' \
 -p 300 -d 240 -e 'LAST' -w 50000 -c 100000

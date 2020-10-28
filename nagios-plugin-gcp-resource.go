@@ -28,7 +28,14 @@ type Options struct {
 	Verbose   []bool  `short:"v" long:"verbose"   required:"false" description:"Verbose option." `
 }
 
+type Metric struct {
+    Name string
+	Value float64
+}
+
 func main() {
+	message := ""
+	
 	// 引数解析処理
 	var opts Options
 	parser := flags.NewParser(&opts, flags.IgnoreUnknown)
@@ -43,7 +50,8 @@ func main() {
 	ctx := context.Background()
 	c, err := monitoring.NewMetricClient(ctx)
 	if err != nil {
-		output(UNKNOWN, "GCP SDK Client request failed.")
+		message = fmt.Sprintf("GCP SDK Client request failed (%s)", err)
+		output(UNKNOWN, message)
 	}
 
 	var filter string = fmt.Sprintf("metric.type = \"%s\" ", opts.Metric)
@@ -65,9 +73,9 @@ func main() {
 			},
 		},
 	}
-
-	var value float64
-	var length int
+	
+	metrics := []Metric{}
+	length := 0
 	it := c.ListTimeSeries(ctx, req)
 	for {
 		resp, err := it.Next()
@@ -80,30 +88,52 @@ func main() {
 		}
 		verbose(opts.Verbose, resp.Metric)
 		verbose(opts.Verbose, resp.Resource)
-		value = evaluate(opts.Evalution, resp.ValueType.String(), resp.Points)
-		verbose(opts.Verbose, value)
-		length = len(resp.Points)
+		metric_value := evaluate(opts.Evalution, resp.ValueType.String(), resp.Points)
+		verbose(opts.Verbose, metric_value)
+		length += len(resp.Points)
+		
+		// Get all labels and remove project_id if present
+		labels := resp.Resource.GetLabels()
+		if _, ok := labels["project_id"]; ok {
+			delete(labels, "project_id");
+		}
+		// Get only last remaining label for value attribution
+		metric_name := ""
+		for _, label := range labels {
+			metric_name = label
+		}
+		// Append metric to previous ones
+		metrics = append(metrics, Metric{metric_name,metric_value})
 	}
+	verbose(opts.Verbose, metrics)
 
 	if length == 0 {
 		output(UNKNOWN, "Time series is empty.")
 	}
 
+	// Init status and message
 	status := OK
-	message := ""
-	switch {
-	case (opts.Critical > 0.0 && value >= opts.Critical):
-		status = CRITICAL
-		message = fmt.Sprintf("%s value: %d over %d", opts.Evalution, int(value), int(opts.Critical))
-	case (opts.Warning > 0.0 && value >= opts.Warning):
-		status = WARNING
-		message = fmt.Sprintf("%s value: %d over %d", opts.Evalution, int(value), int(opts.Warning))
-	default:
-		status = OK
-		message = fmt.Sprintf("%s value: %d ", opts.Evalution, int(value))
+	message = fmt.Sprintf("Everything is OK")
+	perfdata := "|"
+	// Parse all metrics
+	for _, element := range metrics {
+		name := element.Name
+		value := element.Value
+		
+		// Compare metric to optionnal thresholds
+		if opts.Critical > 0.0 && value >= opts.Critical && (status == OK || status == WARNING) {
+			status = CRITICAL
+			message = fmt.Sprintf("%s %s value: %d over %d", name, opts.Evalution, int(value), int(opts.Critical))
+		} else if opts.Warning > 0.0 && value >= opts.Warning && status == OK {
+			status = WARNING
+			message = fmt.Sprintf("%s %s value: %d over %d", name, opts.Evalution, int(value), int(opts.Warning))
+		}
+		
+		// Set performance data
+		perfdata = perfdata + fmt.Sprintf("%s=%f;%d;%d ", name, value, int(opts.Warning), int(opts.Critical))
 	}
-	paformace := fmt.Sprintf("|value=%f;%d;%d", value, int(opts.Warning), int(opts.Critical))
-	output(status, message+paformace)
+	
+	output(status, message+perfdata)
 }
 
 const (
